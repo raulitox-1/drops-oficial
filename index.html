@@ -3958,7 +3958,7 @@ function updateHeroStats(){
                 sub:totalPagados+'/'+_total+' pagados · ¡Mucha suerte! 🍀',
                 link:'participar',
                 tipo:'sticky',
-                dedupKey:'sorteo-esta-noche-'+currentUser.username+'-'+_commId+'-'+_subId
+                dedupKey:'sorteo-esta-noche-'+(currentUser.uid||currentUser.username)+'-'+_commId+'-'+_subId
               });
             }
           }
@@ -4098,7 +4098,8 @@ window.reservar=async function(){
   const btn=document.getElementById('btn-reservar');btn.disabled=true;btn.textContent='Reservando...';
   try{
     const batch=writeBatch(db);
-    cart.forEach(n=>{const r=doc(collection(db,'communities',currentCommId,'subs',currentSubId,'participants'));batch.set(r,{num:n,name,phone,method:null,status:'reserved',proofUrl:null,ts:serverTimestamp()});});
+    const partUid=currentUser?.uid||currentUser?.username||null;
+    cart.forEach(n=>{const r=doc(collection(db,'communities',currentCommId,'subs',currentSubId,'participants'));batch.set(r,{num:n,name,phone,uid:partUid,method:null,status:'reserved',proofUrl:null,ts:serverTimestamp()});});
     await batch.commit();
     partReservedNums=[...cart];cart=[];
     const price=communities[currentCommId]?.subs?.[currentSubId]?.config?.price||12;
@@ -4117,29 +4118,29 @@ window.reservar=async function(){
           }).map(p=>p.num);
           const totalMio=misNums.length*price;
           const numsStrAll=misNums.sort((a,b)=>a-b).map(n=>String(n).padStart(2,'0')).join(', ');
-          addNotif(currentUser.username,currentCommId,{
+          addNotif(currentUser.uid||currentUser.username,currentCommId,{
             icon:'💳',
             text:'Pago pendiente en '+(communities[currentCommId]?.subs?.[currentSubId]?.name||'la rifa'),
             sub:'Nº '+numsStrAll+' · '+totalMio+'€ — Sube el comprobante',
             link:'pago-pendiente:'+currentCommId+':'+currentSubId,
             tipo:'sticky',
-            dedupKey:'pago-pendiente-'+currentUser.username+'-'+currentCommId+'-'+currentSubId
+            dedupKey:'pago-pendiente-'+(currentUser.uid||currentUser.username)+'-'+currentCommId+'-'+currentSubId
           });
         }catch(_){
           // Fallback con solo los recién reservados
-          addNotif(currentUser.username,currentCommId,{
+          addNotif(currentUser.uid||currentUser.username,currentCommId,{
             icon:'💳',
             text:'Pago pendiente en '+(communities[currentCommId]?.subs?.[currentSubId]?.name||'la rifa'),
             sub:'Nº '+partReservedNums.map(n=>String(n).padStart(2,'0')).join(', ')+' · '+(partReservedNums.length*price)+'€ — Sube el comprobante',
             link:'pago-pendiente:'+currentCommId+':'+currentSubId,
             tipo:'sticky',
-            dedupKey:'pago-pendiente-'+currentUser.username+'-'+currentCommId+'-'+currentSubId
+            dedupKey:'pago-pendiente-'+(currentUser.uid||currentUser.username)+'-'+currentCommId+'-'+currentSubId
           });
         }
       }else{
         // Pagos aún no abiertos → info normal
         const _subNameRes=communities[currentCommId]?.subs?.[currentSubId]?.name||'';
-        addNotif(currentUser.username,currentCommId,{
+        addNotif(currentUser.uid||currentUser.username,currentCommId,{
           icon:'🎰',
           text:'Números reservados'+(_subNameRes?' en '+_subNameRes:''),
           sub:'Nº '+partReservedNums.map(n=>String(n).padStart(2,'0')).join(', ')+' · '+(partReservedNums.length*price)+'€ · Recibirás aviso cuando se abra el pago',
@@ -5134,13 +5135,13 @@ window.enviarPago=async function(){
      await notifyTelegram(tMsg);
     // Sticky: pago enviado — se quitará cuando el admin confirme
     if(currentUser){
-      addNotif(currentUser.username,currentCommId,{
+      addNotif(currentUser.uid||currentUser.username,currentCommId,{
         icon:'⏳',
         text:'Comprobante enviado — pendiente de verificación',
         sub:'Nº '+partReservedNums.map(n=>n<10?'0'+n:String(n)).join(', ')+' · El admin verificará tu pago en breve',
         link:'pago-pendiente:'+currentCommId+':'+currentSubId,
         tipo:'sticky',
-        dedupKey:'comprobante-pendiente-'+currentUser.username+'-'+currentCommId+'-'+currentSubId
+        dedupKey:'comprobante-pendiente-'+(currentUser.uid||currentUser.username)+'-'+currentCommId+'-'+currentSubId
       });
       // Borrar el sticky de pago pendiente completamente de Firestore
       borrarStickyPago(currentCommId, currentUser.username, currentSubId);
@@ -5873,7 +5874,7 @@ window.notifyWinner=function(){
 
   // Notificación STICKY al ganador — buscar username aunque no tenga cuenta
   (async()=>{
-    // Buscar el uid del ganador — primero en comunidad, luego en users global
+    // Buscar el uid del ganador — primero en el propio participante, luego en comunidad y global
     let winUsername=sorteoWinner.uid||sorteoWinner.username||'';
     if(!winUsername){
       try{
@@ -8237,7 +8238,7 @@ async function checkRecordatorioPago(){
     });
     if(!misNums.length)return;
     const numsStr=misNums.map(n=>String(n).padStart(2,'0')).join(', ');
-    addNotif(currentUser.username,currentCommId,{
+    addNotif(currentUser.uid||currentUser.username,currentCommId,{
       icon:'⚠️',
       text:'Recordatorio: tienes un pago pendiente',
       sub:'Nº '+numsStr+' — El drop está completo y aún no has enviado el comprobante. ¡Date prisa!',
@@ -8289,7 +8290,7 @@ async function checkStickysPendientes(){
       // Tiene números sin pagar → mantener/crear sticky
       const numsStr=reservedNums.sort((a,b)=>a-b).map(n=>String(n).padStart(2,'0')).join(', ');
       const total=reservedNums.length*(cfg.price||12);
-      await addNotif(currentUser.username,currentCommId,{
+      await addNotif(currentUser.uid||currentUser.username,currentCommId,{
         icon:'💳',
         text:'Pago pendiente en '+(communities[currentCommId]?.subs?.[currentSubId]?.name||'la rifa'),
         sub:'Nº '+numsStr+' · '+total+'€ — Sube el comprobante',
