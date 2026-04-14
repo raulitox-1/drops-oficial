@@ -1163,6 +1163,10 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
         <div class="winner-big" id="res-num">—</div>
         <div class="winner-name" id="res-winner">—</div>
         <div class="alert a-ok" id="res-note" style="text-align:center;margin-bottom:10px;"></div>
+        <div id="ganador-eleccion-wrap" style="display:none;background:var(--gl);border:1px solid rgba(22,168,107,.25);border-radius:var(--rads);padding:12px;margin-bottom:10px;">
+          <div style="font-size:11px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">✅ Elección del ganador</div>
+          <div id="ganador-eleccion-info" style="font-size:13px;line-height:1.7;"></div>
+        </div>
         <button class="btn btn-g" style="width:100%;margin-bottom:8px;" onclick="notifyWinner()">
           🏆 Notificar ganador en la app
         </button>
@@ -5840,6 +5844,28 @@ window.showImg=function(url,name){document.getElementById('modal-img-title').tex
 
 function buildSorteoChips(){const el=document.getElementById('sorteo-chips');if(!el)return;const conf=Object.values(participants).filter(p=>p.status==='confirmed');el.innerHTML='';if(!conf.length){el.innerHTML='<span style="font-size:12px;color:var(--tx2);">Sin confirmados</span>';return;}conf.sort((a,b)=>a.num-b.num).forEach(p=>{const s=document.createElement('span');s.className='badge b-c';s.style.fontSize='12px';s.textContent=(p.num<10?'0'+p.num:p.num)+' · '+p.name;el.appendChild(s);});}
 
+async function cargarGanadorEleccion(){
+  const wrap=document.getElementById('ganador-eleccion-wrap');
+  const info=document.getElementById('ganador-eleccion-info');
+  if(!wrap||!info)return;
+  try{
+    const commDoc=await getDoc(doc(db,'communities',currentCommId));
+    const eleccion=commDoc.data()?.subs?.[currentSubId]?.ganadorEleccion;
+    if(eleccion){
+      wrap.style.display='block';
+      info.innerHTML=
+        '<strong>👤 '+escapeHtml(eleccion.nombre||'')+'</strong><br>'+
+        '🎁 <strong>'+escapeHtml(eleccion.premio||'')+'</strong><br>'+
+        '📍 '+escapeHtml(eleccion.direccion||'')+'<br>'+
+        '📱 '+escapeHtml(eleccion.telefono||'')+'<br>'+
+        (eleccion.comentarios?'💬 '+escapeHtml(eleccion.comentarios)+'<br>':'')+
+        '<span style="font-size:11px;color:var(--tx3);">'+escapeHtml(eleccion.fecha||'')+'</span>';
+    }else{
+      wrap.style.display='none';
+    }
+  }catch(_){}
+}
+
 window.onDrawFile=function(e){const file=e.target.files[0];if(!file)return;drawFile=file;const img=document.getElementById('draw-preview');img.src=URL.createObjectURL(file);img.style.display='block';document.getElementById('draw-upload').classList.add('done');document.getElementById('draw-txt').textContent=file.name;};
 
 window.calcONCE=function(){
@@ -6059,17 +6085,27 @@ window.confirmarPremioElegido=function(){
   wrap.style.padding='14px';
 
   wrap.innerHTML=
-    '<div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:12px;">🎁 '+escapeHtml(premio)+'</div>'+
+    '<div style="background:var(--gl);border:1px solid rgba(22,168,107,.2);border-radius:var(--rads);padding:10px 12px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">'+
+      '<span style="font-size:22px;">🎁</span>'+
+      '<div><div style="font-size:11px;color:var(--tx3);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Premio elegido</div>'+
+      '<div style="font-size:14px;font-weight:800;color:var(--g);">'+escapeHtml(premio)+'</div></div>'+
+    '</div>'+
 
     '<label style="font-size:12px;font-weight:600;">📍 Dirección de envío *</label>'+
     (dirPerfil
-      ? '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rads);padding:10px 12px;font-size:12px;margin-bottom:6px;display:flex;align-items:center;gap:8px;">'+
-          '<input type="radio" name="dir-tipo" value="perfil" id="dir-perfil-radio" checked style="flex-shrink:0;"/>'+
-          '<label for="dir-perfil-radio" style="cursor:pointer;"><strong>Usar del perfil:</strong> '+escapeHtml(dirPerfil)+'</label>'+
+      ? '<div style="background:var(--bg);border:2px solid var(--g);border-radius:var(--rads);padding:10px 12px;font-size:12px;margin-bottom:6px;">'+
+          '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;width:100%;">'+
+          '<input type="radio" name="dir-tipo" value="perfil" id="dir-perfil-radio" checked style="flex-shrink:0;width:18px;height:18px;"/>'+
+          '<div style="flex:1;min-width:0;overflow:hidden;">'+
+            '<div style="font-weight:700;color:var(--tx);margin-bottom:2px;font-size:13px;">Usar dirección del perfil</div>'+
+            '<div style="color:var(--tx2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+escapeHtml(dirPerfil)+'</div>'+
+          '</div></label>'+
         '</div>'+
-        '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rads);padding:10px 12px;font-size:12px;margin-bottom:10px;display:flex;align-items:flex-start;gap:8px;">'+
-          '<input type="radio" name="dir-tipo" value="nueva" id="dir-nueva-radio" style="flex-shrink:0;margin-top:2px;" onchange="toggleDirNueva()"/>'+
-          '<label for="dir-nueva-radio" style="cursor:pointer;">Introducir otra dirección</label>'+
+        '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rads);padding:10px 12px;font-size:12px;margin-bottom:10px;">'+
+          '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;width:100%;">'+
+          '<input type="radio" name="dir-tipo" value="nueva" id="dir-nueva-radio" style="flex-shrink:0;width:18px;height:18px;" onchange="toggleDirNueva()"/>'+
+          '<div style="font-size:13px;font-weight:600;color:var(--tx);">Usar otra dirección</div>'+
+          '</label>'+
         '</div>'
       : '')+
     '<div id="dir-nueva-wrap" style="display:'+(dirPerfil?'none':'block')+';">'+
@@ -6078,9 +6114,10 @@ window.confirmarPremioElegido=function(){
     '</div>'+
 
     '<label style="font-size:12px;font-weight:600;">💬 Comentarios (opcional)</label>'+
-    '<textarea id="premio-comentarios" style="height:70px;margin-bottom:14px;font-family:var(--f);font-size:13px;" placeholder="Ej: Solo por las mañanas, pregunta por Juan, cualquier cosa que quieras añadir..."></textarea>'+
+    '<textarea id="premio-comentarios" style="height:70px;margin-bottom:14px;font-family:var(--f);font-size:13px;" placeholder="Cualquier cosa que quieras añadir..."></textarea>'+
 
-    '<button class="btn btn-g" style="width:100%;font-size:14px;padding:14px;" onclick="enviarPremioFinal()">✅ Enviar al organizador</button>';
+    '<button class="btn btn-g" style="width:100%;font-size:14px;padding:14px;" onclick="enviarPremioFinal()">✅ Enviar al organizador</button>'+
+    '<button class="btn btn-neu" style="width:100%;margin-top:8px;font-size:13px;" onclick="document.getElementById(&quot;modal-envio-ganador&quot;).classList.remove(&quot;open&quot;)">Más tarde</button>';
 
   // Si no hay dirección del perfil, mostrar el campo directamente
   if(!dirPerfil){
@@ -6121,6 +6158,21 @@ window.enviarPremioFinal=async function(){
   if(!direccion){toast('Por favor introduce una dirección de envío');return;}
 
   try{
+    // Guardar elección del ganador en Firestore para que el admin lo vea
+    try{
+      await updateDoc(doc(db,'communities',currentCommId),{
+        [`subs.${currentSubId}.ganadorEleccion`]:{
+          nombre:currentUser.name,
+          premio,
+          direccion,
+          telefono,
+          comentarios,
+          fecha:new Date().toLocaleDateString('es-ES'),
+          ts:Date.now()
+        }
+      });
+    }catch(_){}
+
     await notifyTelegram(
       '🏆 <b>ELECCIÓN DE PREMIO</b>\n\n'+
       '🎯 Drop: <b>'+dropName+'</b>\n\n'+
@@ -7512,7 +7564,7 @@ window.innerGo=function(tab){
   if(tab==='participar'){window._lastCountdownTarget=null;renderAll();}
   if(tab==='chat'){buildChat();}
   if(tab==='dpanel'){buildDpAdmin();}
-  if(tab==='pagos')buildPagos(cfg);if(tab==='sorteo')buildSorteoChips();if(tab==='finanzas')buildFinanzas(cfg);if(tab==='historial')buildHistorial();if(tab==='config'){buildSubListAdmin();fillConfig();}if(tab==='gratis')buildRifaGratis();if(tab==='embajadores')buildEmbajadores();if(tab==='ranking')buildPublicRanking();
+  if(tab==='pagos')buildPagos(cfg);if(tab==='sorteo'){buildSorteoChips();cargarGanadorEleccion();}if(tab==='finanzas')buildFinanzas(cfg);if(tab==='historial')buildHistorial();if(tab==='config'){buildSubListAdmin();fillConfig();}if(tab==='gratis')buildRifaGratis();if(tab==='embajadores')buildEmbajadores();if(tab==='ranking')buildPublicRanking();
   if(tab==='sugerencias')buildSugerencias();
   if(tab==='votacion')buildVotacion();
   if(tab==='catalogo')buildCatalogo();
@@ -9088,74 +9140,77 @@ onAuthStateChanged(auth, async (firebaseUser)=>{
 const VAPID_KEY = 'BEPpN5tc-5h5WDcvhNcqATOX2K5TtjnDxmg7lbYdKLWAYbAsrpWTyV2lI94IXsqIKv2ZH1QY47831hS4rLgVE8A';
 
 async function initPushNotifications(){
-  // Registrar service worker
-  if(!('serviceWorker' in navigator)||!('Notification' in window))return;
+  if(!('serviceWorker' in navigator)){console.warn('SW no soportado');return;}
+  if(!('Notification' in window)){console.warn('Notificaciones no soportadas');return;}
   try{
+    // Registrar SW
     const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-    console.log('SW registrado:', reg.scope);
+    await navigator.serviceWorker.ready;
+    console.log('SW listo');
 
-    // Pedir permiso solo si no lo ha dado ya
-    if(Notification.permission === 'default'){
-      // Esperar a que el usuario interactúe con la app para pedir permiso
+    if(Notification.permission === 'granted'){
+      await saveToken(reg);
+    } else if(Notification.permission === 'default'){
       const askPerm = async () => {
         const perm = await Notification.requestPermission();
+        console.log('Permiso notificaciones:', perm);
         if(perm === 'granted') await saveToken(reg);
         document.removeEventListener('click', askPerm);
       };
       document.addEventListener('click', askPerm, {once: true});
-    } else if(Notification.permission === 'granted'){
-      await saveToken(reg);
     }
-  }catch(e){console.warn('Push init error:', e);}
+  }catch(e){console.warn('Push init error:', e.message);}
 }
 
-async function saveToken(reg){
+async function saveToken(swReg){
   try{
-    if(VAPID_KEY === 'PON_AQUI_TU_VAPID_KEY') return;
+    if(!currentUser){console.warn('saveToken: no hay usuario');return;}
+    const userId = currentUser.uid||currentUser.username;
+    if(!userId){console.warn('saveToken: no hay userId');return;}
+
     const {getMessaging, getToken} = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js');
     const messaging = getMessaging(fbApp);
-    const token = await getToken(messaging, {vapidKey: VAPID_KEY, serviceWorkerRegistration: reg});
+    const token = await getToken(messaging, {
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: swReg
+    });
+
     if(!token){console.warn('No se obtuvo pushToken');return;}
-    console.log('pushToken obtenido:', token.slice(0,20)+'...');
+    console.log('✅ pushToken:', token.slice(0,20)+'...');
 
-    // Guardar en users global (no depende de currentCommId)
-    if(currentUser){
-      const userId=currentUser.uid||currentUser.username;
-      if(userId){
-        // Guardar en users global
-        try{
-          await setDoc(doc(db,'users',userId),{pushToken:token,pushTokenUpdated:Date.now()},{merge:true});
-          console.log('✅ pushToken guardado en users/'+userId);
-        }catch(e){console.warn('saveToken users error:',e.message);}
+    // Guardar en users global
+    await setDoc(doc(db,'users',userId),{
+      pushToken:token, pushTokenUpdated:Date.now()
+    },{merge:true});
 
-        // Guardar también en todas las comunidades donde está el usuario
-        try{
-          const commSnap=await getDocs(collection(db,'communities'));
-          for(const commDoc of commSnap.docs){
-            const userRef=doc(db,'communities',commDoc.id,'users',userId);
-            const uSnap=await getDoc(userRef);
-            if(uSnap.exists()){
-              await updateDoc(userRef,{pushToken:token,pushTokenUpdated:Date.now()});
-              console.log('✅ pushToken guardado en comunidad '+commDoc.id);
-            }
-          }
-        }catch(e){console.warn('saveToken communities error:',e.message);}
-      }
-    }
-  }catch(e){console.warn('saveToken error:', e);}
-}
-
-// Llamar saveToken cuando el usuario inicia sesión (por si ya tenía permiso)
-async function saveTokenIfPermitted(){
-  if(Notification.permission==='granted'){
+    // Guardar en comunidades del usuario
     try{
-      const reg=await navigator.serviceWorker.ready;
-      await saveToken(reg);
-    }catch(_){}
+      const commSnap=await getDocs(collection(db,'communities'));
+      for(const cd of commSnap.docs){
+        const uRef=doc(db,'communities',cd.id,'users',userId);
+        const uSnap=await getDoc(uRef);
+        if(uSnap.exists()){
+          await updateDoc(uRef,{pushToken:token,pushTokenUpdated:Date.now()});
+        }
+      }
+    }catch(e){console.warn('saveToken communities:',e.message);}
+
+    console.log('✅ pushToken guardado para',userId);
+  }catch(e){
+    console.warn('saveToken error:', e.message);
   }
 }
 
-// Inicializar push al cargar
+async function saveTokenIfPermitted(){
+  if(Notification.permission==='granted'){
+    try{
+      const reg = await navigator.serviceWorker.ready;
+      await saveToken(reg);
+    }catch(e){console.warn('saveTokenIfPermitted:',e.message);}
+  }
+}
+
+// Inicializar push
 if(document.readyState==='loading'){
   document.addEventListener('DOMContentLoaded', initPushNotifications);
 }else{
