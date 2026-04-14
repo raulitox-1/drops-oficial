@@ -1784,6 +1784,12 @@ const firebaseConfig = {
 };
 
 const fbApp = initializeApp(firebaseConfig);
+
+// Helper: obtener el ID correcto del usuario (uid Firebase Auth o username legacy)
+function getUserId(user){
+  if(!user)return null;
+  return user.uid||user.username||null;
+}
 const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
 const storage = getStorage(fbApp, 'gs://drops-oficial.firebasestorage.app');
@@ -3597,13 +3603,22 @@ function selectSub(commId,subId){
   // Comprobar stickies pendientes para esta sección (solo participantes, no admins)
   if(!isCommAdmin){
     setTimeout(checkStickysPendientes,2000);
-    // Mostrar banner ganador si existe
-    const sub2=communities[commId]?.subs?.[subId];
-    if(sub2?.ultimoGanador){
-      setTimeout(()=>mostrarBannerGanador(sub2.ultimoGanador, isCommAdmin),600);
-    }
     setTimeout(checkRecordatorioPago,4000);
   }
+  // Mostrar banner ganador si existe — para TODOS (admin y participantes)
+  setTimeout(async()=>{
+    try{
+      const commDoc=await getDoc(doc(db,'communities',commId));
+      const subData=commDoc.data()?.subs?.[subId];
+      if(subData?.ultimoGanador){
+        mostrarBannerGanador(subData.ultimoGanador, isCommAdmin);
+      }
+    }catch(_){
+      // Fallback a datos locales
+      const sub2=communities[commId]?.subs?.[subId];
+      if(sub2?.ultimoGanador)mostrarBannerGanador(sub2.ultimoGanador, isCommAdmin);
+    }
+  },800);
   let _prevCount=-1; // track previous participant count to detect the exact moment it fills
   unsubPart=onSnapshot(collection(db,'communities',commId,'subs',subId,'participants'),async snap=>{
     participants={};snap.forEach(d=>{participants[d.data().num]={id:d.id,...d.data()};});
@@ -4522,12 +4537,12 @@ function afterLogin(){
   const pp = document.getElementById('part-phone');
   if(pn && !pn.value) pn.value = currentUser.name;
   if(pp && !pp.value) pp.value = currentUser.phone||'';
+  // Guardar pushToken si ya tiene permiso
+  setTimeout(()=>{ if(typeof saveTokenIfPermitted==='function')saveTokenIfPermitted(); },2000);
 
   if(currentCommId){
-    // Came from a community flow — enter it
     enterAfterPin(currentCommId);
   } else {
-    // Came from global login at startup — show home
     document.getElementById('home').style.display='block';
     buildHome();
   }
@@ -5883,48 +5898,73 @@ window.notifyWinner=function(){
   const dropName=cfg.rifaName||sub?.name||'Drop';
   const premiosRaw=cfg.premios||'';
   const premiosList=premiosRaw.split('\n').map(p=>p.trim()).filter(Boolean);
+  const _commId=currentCommId;
+  const _subId=currentSubId;
+  const _winner={...sorteoWinner};
 
-  // Notificación STICKY al ganador — buscar username aunque no tenga cuenta
   (async()=>{
-    // Buscar el uid del ganador — primero en el propio participante, luego en comunidad y global
-    let winUsername=sorteoWinner.uid||sorteoWinner.username||'';
-    if(!winUsername){
+    // Paso 1: usar uid del participante si existe
+    let winId=_winner.uid||_winner.username||'';
+
+    // Paso 2: buscar en comunidad por nombre y teléfono
+    if(!winId){
       try{
-        const uSnap=await getDocs(collection(db,'communities',currentCommId,'users'));
+        const uSnap=await getDocs(collection(db,'communities',_commId,'users'));
         uSnap.forEach(ud=>{
+          if(winId)return;
           const u=ud.data();
-          const nameMatch=u.name&&u.name.toLowerCase().trim()===sorteoWinner.name.toLowerCase().trim();
-          const phoneMatch=sorteoWinner.phone&&u.phone&&(u.phone||'').replace(/\D/g,'')===(sorteoWinner.phone||'').replace(/\D/g,'');
-          if((nameMatch||phoneMatch)&&!winUsername)winUsername=ud.id;
+          const nm=u.name&&u.name.toLowerCase().trim()===_winner.name.toLowerCase().trim();
+          const ph=_winner.phone&&u.phone&&(u.phone||'').replace(/\D/g,'')===((_winner.phone||'').replace(/\D/g,''));
+          if(nm||ph)winId=ud.id;
         });
       }catch(_){}
     }
-    if(!winUsername){
+
+    // Paso 3: buscar en users globales (Firebase Auth)
+    if(!winId){
       try{
         const gSnap=await getDocs(collection(db,'users'));
         gSnap.forEach(ud=>{
+          if(winId)return;
           const u=ud.data();
-          const nameMatch=u.name&&u.name.toLowerCase().trim()===sorteoWinner.name.toLowerCase().trim();
-          const phoneMatch=sorteoWinner.phone&&u.phone&&(u.phone||'').replace(/\D/g,'')===(sorteoWinner.phone||'').replace(/\D/g,'');
-          if((nameMatch||phoneMatch)&&!winUsername)winUsername=ud.id;
+          const nm=u.name&&u.name.toLowerCase().trim()===_winner.name.toLowerCase().trim();
+          const ph=_winner.phone&&u.phone&&(u.phone||'').replace(/\D/g,'')===((_winner.phone||'').replace(/\D/g,''));
+          if(nm||ph)winId=ud.id;
         });
       }catch(_){}
     }
-    if(winUsername){
-      resolveSticky('pago-pendiente-'+winUsername+'-'+currentCommId+'-'+currentSubId);
-      resolveSticky('comprobante-pendiente-'+winUsername+'-'+currentCommId+'-'+currentSubId);
-      resolveSticky('sorteo-esta-noche-'+winUsername+'-'+currentCommId+'-'+currentSubId);
-      addNotif(winUsername,currentCommId,{
+
+    console.log('notifyWinner — winId encontrado:', winId, 'para:', _winner.name);
+
+    if(winId){
+      // Resolver stickies anteriores
+      resolveSticky('pago-pendiente-'+winId+'-'+_commId+'-'+_subId);
+      resolveSticky('comprobante-pendiente-'+winId+'-'+_commId+'-'+_subId);
+      resolveSticky('sorteo-esta-noche-'+winId+'-'+_commId+'-'+_subId);
+
+      // Asegurar que el usuario existe en la comunidad
+      try{
+        await setDoc(doc(db,'communities',_commId,'users',winId),{
+          name:_winner.name,phone:_winner.phone||''
+        },{merge:true});
+      }catch(_){}
+
+      // Enviar notificación sticky
+      await addNotif(winId,_commId,{
         icon:'🏆',
         text:'🎉 ¡Has ganado "'+dropName+'"! — Nº '+numStr,
         sub:'Pulsa aquí para elegir tu premio y confirmar tu dirección de envío.'+(premiosList.length?' · '+premiosList.length+' premios disponibles':''),
-        link:'ganador-envio:'+currentCommId+':'+currentSubId,
+        link:'ganador-envio:'+_commId+':'+_subId,
         tipo:'sticky',
-        dedupKey:'ganador-'+winUsername+'-'+currentCommId+'-'+currentSubId,
-        expiresAt:Date.now()+24*60*60*1000
+        dedupKey:'ganador-'+winId+'-'+_commId+'-'+_subId,
+        expiresAt:Date.now()+48*60*60*1000 // 48h para que tenga tiempo
       });
+      console.log('✅ Notificación ganador enviada a:', winId);
+    } else {
+      console.warn('⚠️ No se encontró uid para el ganador:', _winner.name);
     }
   })();
+
   // Telegram al admin
   const c=communities[currentCommId];
   notifyTelegram(
@@ -5933,7 +5973,7 @@ window.notifyWinner=function(){
     '🎯 Ganador: <b>'+sorteoWinner.name+'</b> · Nº '+numStr+'\n'+
     '📱 '+sorteoWinner.phone+'\n\n'+
     '📲 Se ha enviado notificación en la app al ganador para que elija premio y dirección.\n\n'+
-    '⚡ Panel: https://dropsoficial.netlify.app'+(c?.adminToken?'?admintoken='+c.adminToken:'')
+    '⚡ Panel: https://dropsoficial.com'+(c?.adminToken?'?admintoken='+c.adminToken:'')
   );
 };
 
@@ -8124,7 +8164,7 @@ window.borrarTodasNotifs=async function(){
   if(!confirm('¿Borrar todas las notificaciones?'))return;
   // Buscar commId y username de todas las formas posibles
   const cid=currentCommId;
-  const uid=currentUser?.username;
+  const uid=currentUser?.uid||currentUser?.username;
   if(!cid||!uid){toast('Error: no se pudo identificar tu cuenta');return;}
   try{
     const col=collection(db,'communities',cid,'users',uid,'notificaciones');
@@ -9029,6 +9069,8 @@ onAuthStateChanged(auth, async (firebaseUser)=>{
         document.getElementById('loading').style.display='none';
         document.getElementById('home').style.display='block';
         buildHome();
+        // Guardar pushToken si ya tiene permiso
+        setTimeout(()=>{ if(typeof saveTokenIfPermitted==='function')saveTokenIfPermitted(); },3000);
       } else {
         showGlobalLogin();
       }
@@ -9069,20 +9111,48 @@ async function initPushNotifications(){
 
 async function saveToken(reg){
   try{
-    if(VAPID_KEY === 'PON_AQUI_TU_VAPID_KEY') return; // Sin configurar
+    if(VAPID_KEY === 'PON_AQUI_TU_VAPID_KEY') return;
     const {getMessaging, getToken} = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js');
     const messaging = getMessaging(fbApp);
     const token = await getToken(messaging, {vapidKey: VAPID_KEY, serviceWorkerRegistration: reg});
-    if(token && currentUser && currentCommId){
-      // Guardar token en Firestore asociado al usuario
-      const {updateDoc, doc: _doc} = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-      await updateDoc(_doc(db,'communities',currentCommId,'users',currentUser.username),{
-        pushToken: token,
-        pushTokenUpdated: Date.now()
-      }).catch(()=>{});
-      console.log('Push token guardado ✅');
+    if(!token){console.warn('No se obtuvo pushToken');return;}
+    console.log('pushToken obtenido:', token.slice(0,20)+'...');
+
+    // Guardar en users global (no depende de currentCommId)
+    if(currentUser){
+      const userId=currentUser.uid||currentUser.username;
+      if(userId){
+        // Guardar en users global
+        try{
+          await setDoc(doc(db,'users',userId),{pushToken:token,pushTokenUpdated:Date.now()},{merge:true});
+          console.log('✅ pushToken guardado en users/'+userId);
+        }catch(e){console.warn('saveToken users error:',e.message);}
+
+        // Guardar también en todas las comunidades donde está el usuario
+        try{
+          const commSnap=await getDocs(collection(db,'communities'));
+          for(const commDoc of commSnap.docs){
+            const userRef=doc(db,'communities',commDoc.id,'users',userId);
+            const uSnap=await getDoc(userRef);
+            if(uSnap.exists()){
+              await updateDoc(userRef,{pushToken:token,pushTokenUpdated:Date.now()});
+              console.log('✅ pushToken guardado en comunidad '+commDoc.id);
+            }
+          }
+        }catch(e){console.warn('saveToken communities error:',e.message);}
+      }
     }
   }catch(e){console.warn('saveToken error:', e);}
+}
+
+// Llamar saveToken cuando el usuario inicia sesión (por si ya tenía permiso)
+async function saveTokenIfPermitted(){
+  if(Notification.permission==='granted'){
+    try{
+      const reg=await navigator.serviceWorker.ready;
+      await saveToken(reg);
+    }catch(_){}
+  }
 }
 
 // Inicializar push al cargar
