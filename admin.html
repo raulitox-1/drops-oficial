@@ -28,6 +28,7 @@
   --rads:8px;
 }
 html,body{height:100%;background:var(--bg);color:var(--tx);font-family:'JetBrains Mono',monospace;overflow:hidden;}
+@media(max-width:768px){html,body{overflow:auto;}}
 
 /* LOGIN */
 #login-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:100;background:var(--bg);}
@@ -153,11 +154,111 @@ tbody td{padding:11px 16px;font-size:13px;vertical-align:middle;}
 
 /* RESPONSIVE */
 @media(max-width:768px){
-  .sidebar{width:60px;min-width:60px;}
-  .sidebar-logo,.nav-section,.nav-item span,.sidebar-footer div{display:none;}
-  .nav-item{padding:12px;justify-content:center;}
-  .nav-icon{width:auto;}
-  .content{padding:16px;}
+  /* Ocultar sidebar en móvil — usamos nav inferior */
+  .sidebar{display:none;}
+
+  /* App ocupa toda la pantalla */
+  #app{flex-direction:column;height:100vh;}
+  .main{flex:1;overflow-y:auto;padding-bottom:70px;}
+
+  /* Topbar compacto */
+  .topbar{padding:10px 14px;}
+  .topbar-title{font-size:16px;}
+  .topbar-right .status-dot{display:none;}
+  .topbar-right > div:first-child{display:none;}
+
+  /* Contenido con menos padding */
+  .content{padding:12px;}
+
+  /* Stats en grid 2x2 */
+  .stats-grid{grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+  .stat-card{padding:12px 14px;}
+  .stat-val{font-size:22px;}
+  .stat-label{font-size:9px;}
+
+  /* Tablas scrolleables horizontalmente */
+  .table-wrap{border-radius:10px;overflow:hidden;}
+  .table-wrap table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;}
+  .table-head{padding:10px 14px;flex-wrap:wrap;gap:8px;}
+  .table-title{font-size:13px;}
+  .table-search{width:100%;margin-top:6px;}
+
+  /* Botones más grandes para táctil */
+  .btn{padding:9px 14px;font-size:12px;}
+  .btn-sm{padding:7px 12px;font-size:11px;}
+
+  /* Modal full screen en móvil */
+  .modal-bg{padding:0;align-items:flex-end;}
+  .modal{border-radius:20px 20px 0 0;max-height:92vh;max-width:100%;margin:0;}
+
+  /* Notif panel */
+  .notif-preview{padding:10px;}
+
+  /* Nav inferior */
+  #bottom-nav{display:flex;}
+}
+
+/* NAV INFERIOR MÓVIL */
+#bottom-nav{
+  display:none;
+  position:fixed;
+  bottom:0;left:0;right:0;
+  background:var(--bg2);
+  border-top:1px solid var(--bd);
+  z-index:100;
+  padding:6px 0 calc(6px + env(safe-area-inset-bottom));
+}
+.bnav-item{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  gap:3px;padding:6px 4px;cursor:pointer;
+  color:var(--tx3);font-size:9px;letter-spacing:.05em;
+  text-transform:uppercase;font-weight:700;transition:color .15s;
+  border:none;background:none;
+}
+.bnav-item.active{color:var(--g);}
+.bnav-item .bnav-icon{font-size:20px;line-height:1;}
+
+
+/* Extra mobile tweaks */
+@media(max-width:768px){
+  /* Notif form grid → stack */
+  #panel-notificaciones .table-wrap{padding:14px;}
+  #panel-notificaciones .table-wrap > div[style*="grid"]{
+    grid-template-columns:1fr !important;
+  }
+
+  /* Action buttons in tables — stack vertically */
+  td div[style*="display:flex"]{
+    flex-wrap:wrap;
+    gap:4px;
+  }
+
+  /* Stats grid en estadisticas — 2 col */
+  #stats-detail-grid{grid-template-columns:1fr 1fr !important;}
+
+  /* Historial modal cards — 2 col */
+  #modal-hc-content > div[style*="grid-template-columns:1fr 1fr 1fr 1fr"]{
+    grid-template-columns:1fr 1fr !important;
+  }
+  #modal-cd-content > div[style*="grid-template-columns:1fr 1fr 1fr"]{
+    grid-template-columns:1fr 1fr 1fr !important;
+  }
+
+  /* Topbar logout button smaller */
+  .topbar .btn{padding:6px 10px;font-size:11px;}
+
+  /* Comprobantes foto más grande */
+  #fact-comprobantes img{width:70px;height:70px;}
+
+  /* Modal plan grid → stack */
+  #modal-plan .modal > div[style*="grid"]{
+    grid-template-columns:1fr !important;
+  }
+
+  /* Table cells wrap text */
+  tbody td{white-space:normal;word-break:break-word;font-size:12px;}
+  thead th{font-size:9px;padding:8px 10px;}
+  tbody td{padding:8px 10px;}
 }
 </style>
 </head>
@@ -439,6 +540,25 @@ tbody td{padding:11px 16px;font-size:13px;vertical-align:middle;}
 </div>
 
 
+<!-- BOTTOM NAV MÓVIL -->
+<nav id="bottom-nav">
+  <button class="bnav-item active" onclick="goPanel('dashboard')" data-panel="dashboard">
+    <span class="bnav-icon">📊</span>Inicio
+  </button>
+  <button class="bnav-item" onclick="goPanel('comunidades')" data-panel="comunidades">
+    <span class="bnav-icon">🏘️</span>Comun.
+  </button>
+  <button class="bnav-item" onclick="goPanel('usuarios')" data-panel="usuarios">
+    <span class="bnav-icon">👥</span>Usuarios
+  </button>
+  <button class="bnav-item" onclick="goPanel('facturacion')" data-panel="facturacion">
+    <span class="bnav-icon">💶</span>Factur.
+  </button>
+  <button class="bnav-item" onclick="goPanel('notificaciones')" data-panel="notificaciones">
+    <span class="bnav-icon">🔔</span>Notifs
+  </button>
+</nav>
+
 <!-- MODAL ASIGNAR PLAN -->
 <div class="modal-bg" id="modal-plan" onclick="if(event.target===this)closeModal('modal-plan')">
   <div class="modal" style="max-width:500px;">
@@ -594,11 +714,15 @@ window.doLogout=function(){
 window.goPanel=function(name){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.querySelectorAll('.bnav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('panel-'+name)?.classList.add('active');
   document.querySelector(`.nav-item[onclick*="${name}"]`)?.classList.add('active');
+  document.querySelector(`.bnav-item[data-panel="${name}"]`)?.classList.add('active');
   const titles={dashboard:'Dashboard',comunidades:'Comunidades',usuarios:'Usuarios',notificaciones:'Notificaciones',estadisticas:'Estadísticas',facturacion:'Facturación'};
   document.getElementById('topbar-title').textContent=titles[name]||name;
   currentPanel=name;
+  // Scroll to top on panel change (mobile)
+  document.querySelector('.main')?.scrollTo(0,0);
   if(name==='dashboard')loadDashboard();
   else if(name==='comunidades')loadComms();
   else if(name==='usuarios')loadUsers();
