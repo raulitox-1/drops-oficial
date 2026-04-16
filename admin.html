@@ -807,9 +807,17 @@ window.goPanel=function(name){
 
 // ─── INIT ─────────────────────────────────────────────────
 async function initApp(){
-  await Promise.all([loadComms(), loadUsers()]);
-  loadDashboard();
-  loadNotifDestOptions();
+  try{
+    await Promise.all([
+      loadComms().catch(e=>{ console.warn('loadComms error:',e.message); }),
+      loadUsers().catch(e=>{ console.warn('loadUsers error:',e.message); })
+    ]);
+    loadDashboard();
+    loadNotifDestOptions().catch(()=>{});
+  }catch(e){
+    console.error('initApp error:',e.message);
+    toast('Error al cargar datos: '+e.message);
+  }
 }
 
 // ─── LOAD COMMUNITIES ────────────────────────────────────
@@ -820,7 +828,11 @@ async function loadComms(){
     snap.forEach(d=>allComms.push({id:d.id,...d.data()}));
     renderComms(allComms);
     return allComms;
-  }catch(e){toast('Error cargando comunidades: '+e.message);}
+  }catch(e){
+    console.error('loadComms:',e.message);
+    toast('Error cargando comunidades: '+e.message);
+    document.getElementById('comm-list').innerHTML='<div class="empty">Error: '+e.message+'</div>';
+  }
 }
 
 function renderComms(comms){
@@ -1004,7 +1016,11 @@ async function loadUsers(){
     renderUsers(allUsers);
     document.getElementById('user-count-label').textContent=`${allUsers.length} usuarios registrados`;
     return allUsers;
-  }catch(e){toast('Error cargando usuarios: '+e.message);}
+  }catch(e){
+    console.error('loadUsers:',e.message);
+    toast('Error cargando usuarios: '+e.message);
+    document.getElementById('user-list').innerHTML='<div class="empty">Error: '+e.message+'</div>';
+  }
 }
 
 function renderUsers(users){
@@ -1124,8 +1140,8 @@ window.loadDashboard=async function(){
       if(!s.pagosAbiertos)dropsActivos++;
     }
     try{
-      const dpSnap=await getDocs(query(collection(db,'communities',c.id,'drops-particulares'),where('lleno','==',false)));
-      dparts+=dpSnap.size;
+      const dpSnap=await getDocs(collection(db,'communities',c.id,'drops-particulares'));
+      dpSnap.forEach(d=>{ if(!d.data().lleno)dparts++; });
     }catch(_){}
   }
   document.getElementById('s-drops').textContent=dropsActivos;
