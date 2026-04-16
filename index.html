@@ -2725,12 +2725,12 @@ window.dpReservarNums=async function(){
   try{
     const updates={};
     _dpPartCart.forEach(n=>{
-      updates['participantes.'+n]={username:currentUser.username,name:currentUser.name,phone:currentUser.phone||''};
+      updates['participantes.'+n]={username:currentUser.username||(currentUser.uid||''),uid:currentUser.uid||'',name:currentUser.name,phone:currentUser.phone||''};
     });
     await updateDoc(doc(db,'communities',dp.commId,'drops-particulares',dp.id),updates);
     // Update local data
     if(!_dpPartData.participantes)_dpPartData.participantes={};
-    _dpPartCart.forEach(n=>{_dpPartData.participantes[n]={username:currentUser.username,name:currentUser.name,phone:currentUser.phone||''};});
+    _dpPartCart.forEach(n=>{_dpPartData.participantes[n]={username:currentUser.username||(currentUser.uid||''),uid:currentUser.uid||'',name:currentUser.name,phone:currentUser.phone||''};});
 
     // ── Comprobar porcentaje y si se ha llenado ─────────
     const totalOcupados=Object.keys(_dpPartData.participantes).length;
@@ -2974,7 +2974,7 @@ window.reservarDpNums=async function(commId,dpId,precio){
   try{
     const updates={};
     window._dpCart.forEach(n=>{
-      updates['participantes.'+n]={username:currentUser.username,name:currentUser.name,phone:currentUser.phone||''};
+      updates['participantes.'+n]={username:currentUser.username||(currentUser.uid||''),uid:currentUser.uid||'',name:currentUser.name,phone:currentUser.phone||''};
     });
     await updateDoc(doc(db,'communities',commId,'drops-particulares',dpId),updates);
     document.getElementById('dp-participate-modal').classList.remove('open');
@@ -4364,34 +4364,11 @@ function showGlobalLogin(){
 }
 
 async function tryGlobalAutoLogin(savedCreds){
-  try{
-    // Si tiene uid+email es cuenta Firebase Auth — usar onAuthStateChanged
-    if(savedCreds?.uid&&savedCreds?.email){
-      // Firebase Auth mantiene la sesión solo — onAuthStateChanged lo gestiona
-      // Solo mostrar loading hasta que Auth responda
-      return;
-    }
-    if(!savedCreds?.username||!savedCreds?.pass){showGlobalLogin();return;}
-    // Busca en users/ globales, luego en comunidades (cuentas legacy)
-    let snap=await getDoc(doc(db,'users',savedCreds.username));
-    if(!snap.exists()){
-      const commSnap=await getDocs(collection(db,'communities'));
-      for(const commDoc of commSnap.docs){
-        const uSnap=await getDoc(doc(db,'communities',commDoc.id,'users',savedCreds.username));
-        if(uSnap.exists()){snap=uSnap;break;}
-      }
-    }
-    if(!snap.exists()){showGlobalLogin();return;}
-    const data=snap.data();
-    const valid=data.pass===savedCreds.pass||data.pass===btoa(savedCreds.pass)||btoa(atob(savedCreds.pass)||'')===data.pass;
-    if(!valid){showGlobalLogin();return;}
-    currentUser={username:savedCreds.username,name:data.name,phone:data.phone||'',direccion:data.direccion||'',entradas:data.entradas||0,rachaActual:data.rachaActual||0,rachaMaxima:data.rachaMaxima||0};
-    document.getElementById('home').style.display='block';
-    buildHome();
-  }catch(e){
-    console.warn('Auto-login error:',e.message);
-    showGlobalLogin();
-  }
+  // Solo Firebase Auth — la sesión la gestiona onAuthStateChanged automáticamente
+  // Si hay uid+email esperamos a que Firebase Auth restaure la sesión
+  if(savedCreds?.uid&&savedCreds?.email) return;
+  // Cualquier credencial sin uid (cuentas legacy) → redirigir al login de email
+  showGlobalLogin();
 }
 
 window.showLoginScreen = function(commId){
@@ -6061,32 +6038,50 @@ window.notifyWinner=function(){
   const _winner={...sorteoWinner};
 
   (async()=>{
-    // Paso 1: usar uid del participante si existe
-    let winId=_winner.uid||_winner.username||'';
+    // Paso 1: uid directo del participante (guardado al reservar)
+    let winId=_winner.uid||'';
 
-    // Paso 2: buscar en comunidad por nombre y teléfono
+    // Paso 2: buscar en los participantes del drop por nombre/teléfono
+    if(!winId){
+      const winnerName=(_winner.name||'').toLowerCase().trim();
+      const winnerPhone=(_winner.phone||'').replace(/\D/g,'');
+      Object.values(participants).forEach(p=>{
+        if(winId)return;
+        if(p.uid){
+          const nm=(p.name||'').toLowerCase().trim()===winnerName;
+          const ph=winnerPhone&&(p.phone||'').replace(/\D/g,'')===winnerPhone;
+          if(nm||ph)winId=p.uid;
+        }
+      });
+    }
+
+    // Paso 3: buscar en usuarios de la comunidad
     if(!winId){
       try{
+        const winnerName=(_winner.name||'').toLowerCase().trim();
+        const winnerPhone=(_winner.phone||'').replace(/\D/g,'');
         const uSnap=await getDocs(collection(db,'communities',_commId,'users'));
         uSnap.forEach(ud=>{
           if(winId)return;
           const u=ud.data();
-          const nm=u.name&&u.name.toLowerCase().trim()===_winner.name.toLowerCase().trim();
-          const ph=_winner.phone&&u.phone&&(u.phone||'').replace(/\D/g,'')===((_winner.phone||'').replace(/\D/g,''));
-          if(nm||ph)winId=ud.id;
+          const nm=(u.name||'').toLowerCase().trim()===winnerName;
+          const ph=winnerPhone&&(u.phone||'').replace(/\D/g,'')===winnerPhone;
+          if(nm||ph)winId=u.uid||ud.id;
         });
       }catch(_){}
     }
 
-    // Paso 3: buscar en users globales (Firebase Auth)
+    // Paso 4: buscar en users globales (Firebase Auth)
     if(!winId){
       try{
+        const winnerName=(_winner.name||'').toLowerCase().trim();
+        const winnerPhone=(_winner.phone||'').replace(/\D/g,'');
         const gSnap=await getDocs(collection(db,'users'));
         gSnap.forEach(ud=>{
           if(winId)return;
           const u=ud.data();
-          const nm=u.name&&u.name.toLowerCase().trim()===_winner.name.toLowerCase().trim();
-          const ph=_winner.phone&&u.phone&&(u.phone||'').replace(/\D/g,'')===((_winner.phone||'').replace(/\D/g,''));
+          const nm=(u.name||'').toLowerCase().trim()===winnerName;
+          const ph=winnerPhone&&(u.phone||'').replace(/\D/g,'')===winnerPhone;
           if(nm||ph)winId=ud.id;
         });
       }catch(_){}
@@ -7282,6 +7277,16 @@ window.resetRifa=async function(){
     Object.values(participants).forEach(p=>b.delete(doc(db,'communities',currentCommId,'subs',currentSubId,'participants',p.id)));
     await b.commit();
 
+    // 1b. Borrar chat del ganador anterior
+    try{
+      const chatSnap=await getDocs(collection(db,'communities',currentCommId,'subs',currentSubId,'ganador_chat'));
+      if(!chatSnap.empty){
+        const cb=writeBatch(db);
+        chatSnap.forEach(d=>cb.delete(d.ref));
+        await cb.commit();
+      }
+    }catch(_){}
+
     // 2. Reset TODOS los flags en Firestore
     await updateDoc(doc(db,'communities',currentCommId),{
       [`subs.${currentSubId}.pagosAbiertos`]:false,
@@ -8170,7 +8175,8 @@ window.likeSugerencia=async function(id){
     if(!snap.exists())return;
     const data=snap.data();
     const likedBy=data.likedBy||[];
-    const yaLike=likedBy.includes(currentUser.username);
+    const _likeId=currentUser.uid||currentUser.username;
+    const yaLike=likedBy.includes(_likeId)||likedBy.includes(currentUser.username);
     if(yaLike){
       // Quitar like
       await updateDoc(ref,{
@@ -8181,7 +8187,7 @@ window.likeSugerencia=async function(id){
       // Dar like
       await updateDoc(ref,{
         likes:(data.likes||0)+1,
-        likedBy:[...likedBy,currentUser.username]
+        likedBy:[...likedBy,currentUser.uid||currentUser.username]
       });
     }
     buildSugerencias();
@@ -8211,7 +8217,8 @@ async function buildVotacion(){
     const v=vDoc.data();
     const vId=vDoc.id;
     // Ver si ya votó
-    const miVotoSnap=currentUser?await getDoc(doc(db,'communities',currentCommId,'subs',currentSubId,'votaciones',vId,'votos',currentUser.username)):null;
+    const _votoId=currentUser.uid||currentUser.username;
+    const miVotoSnap=currentUser?await getDoc(doc(db,'communities',currentCommId,'subs',currentSubId,'votaciones',vId,'votos',_votoId)):null;
     const yaVoto=miVotoSnap?.exists();
     const miVoto=yaVoto?miVotoSnap.data().opcion:null;
     // Calcular totales
@@ -8263,7 +8270,7 @@ async function buildVotacion(){
 window.votarOpcion=async function(vId,opcion){
   if(!currentUser){toast('Debes iniciar sesión para votar');return;}
   try{
-    await setDoc(doc(db,'communities',currentCommId,'subs',currentSubId,'votaciones',vId,'votos',currentUser.username),{
+    await setDoc(doc(db,'communities',currentCommId,'subs',currentSubId,'votaciones',vId,'votos',currentUser.uid||currentUser.username),{
       opcion,ts:serverTimestamp(),name:currentUser.name
     });
     toast('✅ ¡Voto registrado!');
@@ -8629,7 +8636,7 @@ async function resolveSticky(dedupKey){
 async function resolveAllStickiesForSub(commId,subId){
   if(!currentUser)return;
   try{
-    const col=collection(db,'communities',commId,'users',currentUser.username,'notificaciones');
+    const col=collection(db,'communities',commId,'users',currentUser.uid||currentUser.username,'notificaciones');
     const snap=await getDocs(query(col,where('tipo','==','sticky')));
     const batch=writeBatch(db);
     let found=0;
@@ -8781,7 +8788,7 @@ async function checkRecordatorioPago(){
       sub:'Nº '+numsStr+' — El drop está completo y aún no has enviado el comprobante. ¡Date prisa!',
       link:'pago-pendiente:'+currentCommId+':'+currentSubId,
       tipo:'sticky',
-      dedupKey:'recordatorio-pago-'+currentUser.username+'-'+currentCommId+'-'+currentSubId
+      dedupKey:'recordatorio-pago-'+(currentUser.uid||currentUser.username)+'-'+currentCommId+'-'+currentSubId
     });
   }catch(e){console.warn('checkRecordatorioPago:',e.message);}
 }
@@ -8821,7 +8828,7 @@ async function checkStickysPendientes(){
       else if(p.status==='confirmed')confirmedNums.push(p.num);
     });
 
-    const dedupKey='pago-pendiente-'+currentUser.username+'-'+currentCommId+'-'+currentSubId;
+    const dedupKey='pago-pendiente-'+(currentUser.uid||currentUser.username)+'-'+currentCommId+'-'+currentSubId;
 
     if(reservedNums.length>0){
       // Tiene números sin pagar → mantener/crear sticky
@@ -8966,7 +8973,7 @@ function renderNotifs(notifs){
     d.onclick=function(e){
       if(e.target.closest('.notif-x-btn'))return;
       if(!esSticky){
-        try{updateDoc(doc(db,'communities',currentCommId,'users',currentUser.username,'notificaciones',n.id),{leida:true});}catch(_){}
+        try{updateDoc(doc(db,'communities',currentCommId,'users',currentUser.uid||currentUser.username,'notificaciones',n.id),{leida:true});}catch(_){}
       }
       closeNotifPanel();
       if(n.link)navigateFromNotif(n.link);
@@ -9191,9 +9198,9 @@ window.guardarPerfil=async function(){
   try{
     const dirData={phone,direccion,dirCalle,dirCP,dirCiudad,dirProvincia};
     // Update in global users
-    try{await updateDoc(doc(db,'users',currentUser.username),dirData);}catch(e){}
+    try{await updateDoc(doc(db,'users',currentUser.uid||currentUser.username),dirData);}catch(e){}
     // Update in community users
-    try{await updateDoc(doc(db,'communities',currentCommId,'users',currentUser.username),dirData);}catch(e){}
+    try{await updateDoc(doc(db,'communities',currentCommId,'users',currentUser.uid||currentUser.username),dirData);}catch(e){}
     currentUser.phone=phone;currentUser.direccion=direccion;
     currentUser.dirCalle=dirCalle;currentUser.dirCP=dirCP;currentUser.dirCiudad=dirCiudad;currentUser.dirProvincia=dirProvincia;
     closeProfileModal();
@@ -9574,8 +9581,8 @@ onAuthStateChanged(auth, async (firebaseUser)=>{
       }
     }catch(e){showGlobalLogin();}
   } else if(!firebaseUser&&!currentUser){
-    // No hay sesión Firebase ni local — mostrar login
-    // (tryGlobalAutoLogin ya lo gestiona para cuentas legacy)
+    // No hay sesión Firebase — mostrar login
+    showGlobalLogin();
   }
 });
 
