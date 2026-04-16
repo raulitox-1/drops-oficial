@@ -862,7 +862,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
         </div>
       </div>
 
-      <button class="btn btn-g" style="width:100%;padding:14px;font-size:15px;" onclick="doRegister()">Crear cuenta →</button>
+      <button class="btn btn-g" id="btn-crear-cuenta" style="width:100%;padding:14px;font-size:15px;opacity:.5;" disabled onclick="doRegister()">Crear cuenta →</button>
       <div class="login-toggle">¿Ya tienes cuenta? <span onclick="showLogin()">Entrar</span></div>
       <button class="btn btn-neu" style="width:100%;margin-top:8px;" onclick="goHome()">← Volver</button>
     </div>
@@ -4585,6 +4585,7 @@ window.doLogin = async function(){
 window.toggleLegalCheck = function(){
   const box = document.getElementById('reg-legal-check');
   const container = document.getElementById('reg-legal-box');
+  const btn = document.getElementById('btn-crear-cuenta');
   const accepted = box.dataset.accepted === '1';
   if(!accepted){
     box.dataset.accepted = '1';
@@ -4592,12 +4593,14 @@ window.toggleLegalCheck = function(){
     box.style.background = 'var(--g)';
     box.style.borderColor = 'var(--g)';
     container.style.borderColor = 'var(--g)';
+    if(btn){btn.disabled=false;btn.style.opacity='1';}
   } else {
     box.dataset.accepted = '0';
     box.innerHTML = '';
     box.style.background = 'var(--bg)';
     box.style.borderColor = 'var(--bd)';
     container.style.borderColor = 'var(--bd)';
+    if(btn){btn.disabled=true;btn.style.opacity='.5';}
   }
 };
 
@@ -7272,22 +7275,43 @@ window.checkCommBloqueada = async function(){
 };
 
 window.resetRifa=async function(){
-  if(!confirm('¿Borrar TODOS los participantes y empezar nuevo drop?'))return;
+  if(!confirm('¿Borrar TODOS los participantes y empezar nuevo drop?\n\nSe borrarán participantes y se reiniciará el estado completamente.'))return;
   try{
+    // 1. Borrar participantes en batch
     const b=writeBatch(db);
     Object.values(participants).forEach(p=>b.delete(doc(db,'communities',currentCommId,'subs',currentSubId,'participants',p.id)));
     await b.commit();
-    // Reset flags
+
+    // 2. Reset TODOS los flags en Firestore
     await updateDoc(doc(db,'communities',currentCommId),{
       [`subs.${currentSubId}.pagosAbiertos`]:false,
-      [`subs.${currentSubId}.telegramEnviado`]:false
+      [`subs.${currentSubId}.telegramEnviado`]:false,
+      [`subs.${currentSubId}.ganadorEleccion`]:null,
+      [`subs.${currentSubId}.ultimoGanador`]:null,
+      [`subs.${currentSubId}.sorteoBlockedUntilPago`]:false,
+      [`subs.${currentSubId}.pagoCuotaConfirmado`]:false,
+      [`subs.${currentSubId}.cuotaPendienteComprobante`]:null,
     });
-    if(communities[currentCommId].subs[currentSubId]){
-      communities[currentCommId].subs[currentSubId].pagosAbiertos=false;
-      communities[currentCommId].subs[currentSubId].telegramEnviado=false;
+
+    // 3. Reset estado local
+    const sub=communities[currentCommId]?.subs?.[currentSubId];
+    if(sub){
+      sub.pagosAbiertos=false;
+      sub.telegramEnviado=false;
+      sub.ganadorEleccion=null;
+      sub.ultimoGanador=null;
+      sub.sorteoBlockedUntilPago=false;
+      sub.pagoCuotaConfirmado=false;
+      sub.cuotaPendienteComprobante=null;
     }
+    participants={};
     rifaLlenaNotified=false;
-    toast('✓ Drop reiniciado');
+    window._premioElegido=null;
+
+    // 4. Redibujar
+    renderAll();
+    innerGo('panel');
+    toast('✓ Drop reiniciado completamente');
   }catch(e){toast('Error: '+e.message);}
 };
 

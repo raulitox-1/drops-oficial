@@ -1232,20 +1232,15 @@ window.enviarNotifGlobal=async function(){
     let batchCount=0;
     for(const ud of userSnap.docs){
       const username = ud.id;
-      const uid = usernameToUid[username];
+      const uid = usernameToUid[username] || ud.data()?.uid;
 
-      // Escribir en users/{uid}/notificaciones (donde la app lee las notifs)
+      // Escribir SOLO en users/{uid}/notificaciones (ruta global que usa la app)
       if(uid){
         const globalRef=doc(collection(db,'users',uid,'notificaciones'));
         batch.set(globalRef,{...notifData, commId:c.id});
         batchCount++;
+        sent++;
       }
-
-      // También en communities (legacy fallback)
-      const notifRef=doc(collection(db,'communities',c.id,'users',username,'notificaciones'));
-      batch.set(notifRef,notifData);
-      batchCount++;
-      sent++;
 
       if(batchCount>=450){
         await batch.commit().catch(()=>{errors++;});
@@ -1786,11 +1781,6 @@ async function notifToAdmin(commId, adminUsername, notifData){
       }
     }
   }catch(e){ console.warn('notifToAdmin global error:', e.message); }
-
-  // 2. También escribir en communities/{id}/users/{username}/notificaciones (por si acaso)
-  try{
-    await addDoc(collection(db,'communities',commId,'users',adminUsername,'notificaciones'), notifData);
-  }catch(e){ console.warn('notifToAdmin comm error:', e.message); }
 
   return sent;
 }
