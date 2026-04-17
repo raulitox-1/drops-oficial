@@ -5824,40 +5824,47 @@ window.confirmGroup=async function(key){
       }catch(e){console.warn('entradas error:',e);}
     }
     toast('✓ Confirmado');
-    // Notif al participante
+    // Notif al participante — escribir en users/{uid}/notificaciones (ruta global)
     const confirmedParts=Object.values(participants).filter(p=>ids.includes(p.id));
     if(confirmedParts.length>0){
       const cp=confirmedParts[0];
-      // Find user by name to get username
       try{
-        const usnap2=await getDocs(collection(db,'communities',currentCommId,'users'));
-        for(const ud of usnap2.docs){
-          const u=ud.data();
-          if(u.name===cp.name){
-            addNotif(ud.id,currentCommId,{
-              icon:'✅',
-              text:'¡Pago confirmado! Ya estás dentro del sorteo',
-              sub:'Tu comprobante ha sido verificado por el admin. ¡Buena suerte! 🍀',
-              link:'pago-pendiente:'+currentCommId+':'+currentSubId,
-              tipo:'accion',
-              dedupKey:'pago-confirmado-'+ud.id+'-'+currentCommId+'-'+currentSubId
-            });
-            try{
-              // Borrar TODAS las stickies de pago de este usuario directamente
-              const userNotifCol=collection(db,'communities',currentCommId,'users',ud.id,'notificaciones');
-              const allStickies=await getDocs(query(userNotifCol,where('tipo','==','sticky')));
-              const batchSticky=writeBatch(db);
-              allStickies.forEach(sd=>{
-                const dk=sd.data().dedupKey||'';
-                if(!dk||dk.includes(currentSubId)||dk.includes(currentCommId)){
-                  batchSticky.delete(sd.ref);
-                }
-              });
-              await batchSticky.commit();
-            }catch(_){}
+        // Buscar uid del participante: primero en el propio participante, luego en comunidad
+        let partUid=cp.uid||'';
+        if(!partUid){
+          const usnap2=await getDocs(collection(db,'communities',currentCommId,'users'));
+          for(const ud of usnap2.docs){
+            const u=ud.data();
+            const nm=(u.name||'').toLowerCase().trim()===(cp.name||'').toLowerCase().trim();
+            const ph=cp.phone&&u.phone&&(u.phone||'').replace(/\D/g,'')===(cp.phone||'').replace(/\D/g,'');
+            if(nm||ph){ partUid=u.uid||ud.id; break; }
           }
         }
-      }catch(e){}
+        if(partUid){
+          // Escribir en users/{uid}/notificaciones — aquí la Cloud Function lo detecta y envía push
+          await addDoc(collection(db,'users',partUid,'notificaciones'),{
+            icon:'✅',
+            text:'¡Pago confirmado! Ya estás dentro del sorteo',
+            sub:'Tu comprobante ha sido verificado por el admin. ¡Buena suerte! 🍀',
+            link:'pago-pendiente:'+currentCommId+':'+currentSubId,
+            tipo:'accion',
+            commId:currentCommId,
+            ts:serverTimestamp(),
+            leida:false,
+            dedupKey:'pago-confirmado-'+partUid+'-'+currentCommId+'-'+currentSubId
+          });
+          // Borrar sticky de pago pendiente (ruta global)
+          try{
+            const notifSnap=await getDocs(query(
+              collection(db,'users',partUid,'notificaciones'),
+              where('dedupKey','==','pago-pendiente-'+partUid+'-'+currentCommId+'-'+currentSubId)
+            ));
+            const bSticky=writeBatch(db);
+            notifSnap.forEach(sd=>bSticky.delete(sd.ref));
+            await bSticky.commit();
+          }catch(_){}
+        }
+      }catch(e){console.warn('notif confirm error:',e);}
     }
     buildPagos(communities[currentCommId]?.subs?.[currentSubId]?.config);
 
@@ -6176,6 +6183,31 @@ window.abrirModalEnvioGanador=function(){
 
   let m=document.getElementById('modal-envio-ganador');
   if(!m){m=document.createElement('div');m.id='modal-envio-ganador';m.className='modal-bg';document.body.appendChild(m);}
+
+  // Comprobar si ya eligió premio en ESTE drop — si es así mostrar confirmado
+  const eleccion=sub?.ganadorEleccion;
+  const yaEligio=eleccion&&eleccion.uid&&eleccion.uid===(currentUser.uid||currentUser.username);
+
+  // Si ya eligió en este drop — mostrar estado confirmado
+  if(yaEligio){
+    m.innerHTML=
+      '<div class="modal" style="max-width:440px;">'+
+        '<div style="background:linear-gradient(135deg,#7c3aed,#a855f7);border-radius:var(--rad) var(--rad) 0 0;padding:20px 18px 16px;margin:-20px -20px 18px;">'+
+          '<div style="font-size:40px;text-align:center;margin-bottom:8px;">🏆</div>'+
+          '<div style="font-size:20px;font-weight:900;color:#fff;text-align:center;letter-spacing:-.5px;">¡Enhorabuena!</div>'+
+          '<div style="font-size:13px;color:rgba(255,255,255,.85);text-align:center;margin-top:4px;">Has ganado el drop "'+escapeHtml(dropName)+'"</div>'+
+        '</div>'+
+        '<div style="text-align:center;padding:10px 0 16px;">'+
+          '<div style="font-size:36px;margin-bottom:8px;">✅</div>'+
+          '<div style="font-size:15px;font-weight:800;color:var(--g);margin-bottom:4px;">¡Ya has enviado tu elección!</div>'+
+          '<div style="font-size:13px;color:var(--tx2);margin-bottom:8px;">Premio: <strong>'+escapeHtml(eleccion.premio||'')+'</strong></div>'+
+          '<div style="font-size:12px;color:var(--tx3);">El organizador se pondrá en contacto contigo pronto.</div>'+
+        '</div>'+
+        '<button class="btn btn-neu" style="width:100%;" onclick="document.getElementById(\'modal-envio-ganador\').classList.remove(\'open\')">Cerrar</button>'+
+      '</div>';
+    m.classList.add('open');
+    return;
+  }
 
   const premiosBtns=premios.length>0
     ? premios.map((p,i)=>
