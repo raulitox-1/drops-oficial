@@ -699,6 +699,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 
     <!-- Grid -->
     <div class="grid" id="dp-part-grid"></div>
+    <div id="dp-part-names-list" style="margin-top:12px;padding:0 2px;"></div>
 
     <!-- Cart -->
     <div class="cart-bar" id="dp-cart-bar">
@@ -2527,7 +2528,26 @@ function renderDpCard(dp,commId,container){
 
   container.appendChild(card);
 
-  // Countdown en tiempo real
+  // Fix tap en carrusel móvil — detectar si fue tap o scroll
+  const imgsWrap=card.querySelector('.dp-card-imgs');
+  if(imgsWrap){
+    let _touchStartX=0,_touchStartY=0;
+    imgsWrap.addEventListener('touchstart',function(e){
+      _touchStartX=e.touches[0].clientX;
+      _touchStartY=e.touches[0].clientY;
+    },{passive:true});
+    imgsWrap.addEventListener('touchend',function(e){
+      const dx=Math.abs(e.changedTouches[0].clientX-_touchStartX);
+      const dy=Math.abs(e.changedTouches[0].clientY-_touchStartY);
+      // Si el movimiento fue pequeño es un tap, no scroll
+      if(dx<10&&dy<10){
+        const img=e.target.closest('img');
+        if(img&&img.src){
+          showDpImgModal(img.src, dp.photos.slice(0,6));
+        }
+      }
+    },{passive:true});
+  }
   if(expMs>0){
     function updateCd(){
       const rem=expMs-Date.now();
@@ -2686,12 +2706,12 @@ function renderDpPartScreen(){
   }
 
   // Si es el vendedor y el drop llegó al 85% pero no se lo hemos mostrado aún en esta sesión
-  if(dp.aviso85&&!dp.materialRecibido&&!dp.lleno&&currentUser?.username===dp.vendedor?.username&&!window._dpEnvioShown){
+  if(dp.aviso85&&!dp.materialRecibido&&!dp.lleno&&(currentUser?.uid===dp.vendedor?.uid||currentUser?.username===dp.vendedor?.username)&&!window._dpEnvioShown){
     window._dpEnvioShown=true;
     setTimeout(()=>showDpEnvioModal(dp),500);
   }
   // Si el vendedor vuelve después de cerrar el overlay sin subir comprobante
-  if(dp.lleno&&!dp.comisionPagada&&currentUser?.username===dp.vendedor?.username){
+  if(dp.lleno&&!dp.comisionPagada&&(currentUser?.uid===dp.vendedor?.uid||currentUser?.username===dp.vendedor?.username)){
     window._dpPendingComisionDp={id:dp.id,commId:dp.commId,titulo:dp.titulo,precio:dp.precio,total:dp.total};
   }
 
@@ -2700,7 +2720,7 @@ function renderDpPartScreen(){
   if(dp.materialRecibido){
     statusBox.innerHTML='<div class="alert a-ok" style="font-size:12px;">✅ <strong>Material verificado</strong> — El admin confirma que tiene el material en su poder. ¡Reserva con total seguridad!</div>';
   } else if(dp.lleno){
-    const esV=currentUser?.username===dp.vendedor?.username;
+    const esV=(currentUser?.uid&&currentUser?.uid===dp.vendedor?.uid)||currentUser?.username===dp.vendedor?.username;
     if(esV&&!dp.comprobanteComision){
       statusBox.innerHTML=
         '<div class="alert a-warn" style="font-size:12px;margin-bottom:8px;">💳 <strong>Drop completo</strong> — Transfiere la comisión y sube el comprobante.</div>'+
@@ -2709,18 +2729,18 @@ function renderDpPartScreen(){
           '<div style="font-size:14px;font-weight:800;margin-bottom:6px;">ES65 1583 0001 1590 6984 8933</div>'+
           '<button onclick="copyDpIban()" class="btn btn-s btn-neu" style="width:100%;margin-bottom:6px;">📋 Copiar IBAN</button>'+
         '</div>'+
-        '<div class="upload" onclick="openDpComprInput()" style="padding:10px;margin-bottom:6px;">'+
-          '<div style="font-size:20px;">📸</div><div style="font-size:12px;font-weight:700;" id="dp-comp-txt">Subir comprobante de comisión</div>'+
-        '</div>'+
-        '<input type="file" id="dp-comp-input" accept="image/*" style="display:none;" data-dpid="'+dp.id+'" data-commid="'+dp.commId+'" onchange="onDpComprobanteChosen(event,this.dataset.dpid,this.dataset.commid)"/>'+
+        '<input type="file" id="dp-comp-input" accept="image/*,application/pdf" style="display:none;" data-dpid="'+dp.id+'" data-commid="'+dp.commId+'" onchange="onDpComprobanteChosen(event,this.dataset.dpid,this.dataset.commid)"/>'+
         '<img id="dp-comp-preview" style="display:none;width:100%;border-radius:var(--rads);max-height:120px;object-fit:cover;margin-bottom:6px;"/>'+
+        '<label for="dp-comp-input" class="btn btn-neu" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;margin-bottom:6px;padding:12px;">📎 Adjuntar comprobante (foto o PDF)</label>'+
         '<button id="dp-comp-send" class="btn btn-g" style="width:100%;display:none;" data-dpid="'+dp.id+'" data-commid="'+dp.commId+'" data-titulo="'+escapeHtml(dp.titulo||'')+'" onclick="enviarComprobanteDp(this.dataset.dpid,this.dataset.commid,this.dataset.titulo)">Enviar comprobante →</button>';
     } else if(esV&&dp.comprobanteComision){
       statusBox.innerHTML='<div class="alert a-info" style="font-size:12px;">⏳ <strong>Comprobante enviado</strong> — El admin lo está verificando.</div>';
     } else {
-      statusBox.innerHTML='<div class="alert a-warn" style="font-size:12px;">💳 <strong>Drop completo</strong> — Pendiente de verificar la comisión del vendedor.</div>';
+      // Participantes no ven nada de comisiones — solo esperan
+      statusBox.innerHTML='<div class="alert a-info" style="font-size:12px;">🎯 <strong>¡Drop completo!</strong> En breve se abrirá el pago. El organizador te avisará cuando puedas pagar.</div>';
     }
-    statusBox.innerHTML='<div class="alert a-warn" style="font-size:12px;">📦 <strong>¡Casi lleno!</strong> El vendedor ya está preparando el envío del material al administrador.</div>';
+  } else if(dp.aviso85&&!dp.materialRecibido){
+    statusBox.innerHTML='<div class="alert a-warn" style="font-size:12px;">📦 <strong>¡Drop al 85%!</strong> El vendedor está preparando el envío del material al administrador.</div>';
   } else {
     statusBox.innerHTML='<div style="font-size:11px;color:var(--tx2);padding:6px 0;">⏳ El material se enviará al admin cuando el drop llegue al 85%.</div>';
   }
@@ -2740,7 +2760,7 @@ function buildDpGrid(participantes,total,precio){
   for(let i=0;i<total;i++){
     const p=participantes[i];
     const occupied=!!p;
-    const isMe=p&&p.username===currentUser?.username;
+    const isMe=p&&(p.uid&&p.uid===(currentUser?.uid)||p.username===currentUser?.username);
     const inCart=_dpPartCart.includes(i);
     const b=document.createElement('button');
     b.className='nb';
@@ -2751,6 +2771,32 @@ function buildDpGrid(participantes,total,precio){
     if(p)b.title=p.name+(isMe?' (tú)':'');
     if(!occupied&&!isMe)b.onclick=()=>dpToggleNum(i,precio);
     grid.appendChild(b);
+  }
+
+  // Lista de participantes debajo del grid
+  const listWrap=document.getElementById('dp-part-names-list');
+  if(listWrap){
+    const parts=Object.entries(participantes||{});
+    if(!parts.length){listWrap.innerHTML='';return;}
+    // Agrupar por nombre
+    const byName={};
+    parts.forEach(([num,p])=>{
+      const key=p.name;
+      if(!byName[key])byName[key]={name:p.name,nums:[]};
+      byName[key].nums.push(Number(num));
+    });
+    listWrap.innerHTML=
+      '<div style="font-size:11px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Participantes</div>'+
+      Object.values(byName).map(p=>{
+        const isMe2=p.name===(currentUser?.name);
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:.5px solid var(--bd);">'+
+          '<span style="font-size:13px;font-weight:'+(isMe2?'700':'500')+';color:'+(isMe2?'var(--g)':'var(--tx)')+';">'+
+            escapeHtml(p.name)+(isMe2?' 👈':'')+'</span>'+
+          '<span style="font-size:12px;color:var(--tx2);">'+
+            p.nums.sort((a,b)=>a-b).map(n=>String(n).padStart(2,'0')).join(', ')+
+          '</span>'+
+        '</div>';
+      }).join('');
   }
 }
 
@@ -2850,11 +2896,26 @@ window.dpReservarNums=async function(){
         );
         // Aviso visual
         const statusBox=document.getElementById('dp-part-status-box');
-        if(currentUser?.username===dp.vendedor?.username){
-          // Es el vendedor — mostrar modal de aviso de envío
+        const esVendedor85=(currentUser?.uid&&currentUser?.uid===dp.vendedor?.uid)||currentUser?.username===dp.vendedor?.username;
+        if(esVendedor85){
           showDpEnvioModal(dp);
         } else {
           if(statusBox)statusBox.innerHTML='<div class="alert a-warn" style="font-size:12px;">📦 <strong>¡Drop al 85%!</strong> El vendedor está preparando el envío del material al administrador.</div>';
+        }
+        // Push al vendedor
+        const vendUid=dp.vendedor?.uid||dp.vendedor?.username||'';
+        if(vendUid){
+          await addDoc(collection(db,'users',vendUid,'notificaciones'),{
+            icon:'📦',
+            text:'¡Tu drop llegó al 85%! Prepara el envío',
+            sub:'Envía el material al admin para que puedan verificarlo. El coste corre a tu cargo.',
+            link:'dp-part:'+dp.commId+':'+dp.id,
+            tipo:'sticky',
+            commId:dp.commId,
+            ts:serverTimestamp(),
+            leida:false,
+            dedupKey:'dp-85-'+dp.id
+          }).catch(()=>{});
         }
       }catch(e){console.warn('aviso85 error:',e);}
     }
@@ -2865,11 +2926,21 @@ window.dpReservarNums=async function(){
 
     if(lleno){
       // Guardar notificación para el vendedor (llegará cuando entre)
-      addNotif(dp.vendedor.username,dp.commId,{
-        icon:'🎯',text:'¡Tu drop está al 100%!',
-        sub:'Paga la comisión al admin para abrir el cobro a los participantes.',
-        link:'dp-part:'+dp.id
-      });
+      // Push al vendedor al 100%
+      const vUid100=dp.vendedor?.uid||dp.vendedor?.username||'';
+      if(vUid100){
+        await addDoc(collection(db,'users',vUid100,'notificaciones'),{
+          icon:'🎯',
+          text:'¡Tu drop está al 100%! Paga la comisión',
+          sub:'Transfiere la comisión al admin para que los participantes puedan pagar. IBAN: ES65 1583 0001 1590 6984 8933',
+          link:'dp-part:'+dp.commId+':'+dp.id,
+          tipo:'sticky',
+          commId:dp.commId,
+          ts:serverTimestamp(),
+          leida:false,
+          dedupKey:'dp-100-'+dp.id
+        }).catch(()=>{});
+      }
       // 1. Notificar al admin por Telegram
       const c=communities[dp.commId];
       await notifyTelegram(
@@ -9367,12 +9438,9 @@ function showDpComisionPendienteModal(dp){
       (yaSubio?
         '<div class="alert a-info" style="margin-bottom:12px;font-size:12px;">⏳ Comprobante enviado — esperando verificación del admin.</div>':
         '<div style="border:.5px solid var(--bd);border-radius:var(--rad);padding:12px;margin-bottom:12px;" id="dp-comp-modal-input">'+
-          '<div style="font-size:13px;font-weight:700;margin-bottom:8px;">📸 Sube el comprobante de la transferencia</div>'+
-          '<div style="background:var(--bg2);border-radius:var(--rads);padding:14px;text-align:center;cursor:pointer;margin-bottom:8px;" onclick="openDpComprInput()">'+
-            '<div style="font-size:30px;margin-bottom:4px;">📷</div>'+
-            '<div style="font-size:12px;font-weight:700;" id="dp-comp-txt">Toca para seleccionar foto</div>'+
-          '</div>'+
-          '<input type="file" id="dp-comp-input" accept="image/*" style="display:none;" data-dpid="'+dp.id+'" data-commid="'+dp.commId+'" onchange="onDpComprobanteChosen(event,this.dataset.dpid,this.dataset.commid)"/>'+
+          '<div style="font-size:13px;font-weight:700;margin-bottom:8px;">📎 Adjunta el comprobante de la transferencia</div>'+
+          '<input type="file" id="dp-comp-input" accept="image/*,application/pdf" style="display:none;" data-dpid="'+dp.id+'" data-commid="'+dp.commId+'" onchange="onDpComprobanteChosen(event,this.dataset.dpid,this.dataset.commid)"/>'+
+          '<label for="dp-comp-input" class="btn btn-neu" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;margin-bottom:8px;padding:12px;">📎 Foto, captura de pantalla o PDF</label>'+
           '<img id="dp-comp-preview" style="display:none;width:100%;border-radius:var(--rads);max-height:160px;object-fit:cover;margin-bottom:8px;"/>'+
           '<button id="dp-comp-send" class="btn btn-g" style="width:100%;display:none;" data-dpid="'+dp.id+'" data-commid="'+dp.commId+'" data-titulo="'+escapeHtml(dp.titulo)+'" onclick="enviarComprobanteDp(this.dataset.dpid,this.dataset.commid,this.dataset.titulo)">Enviar comprobante →</button>'+
         '</div>'
