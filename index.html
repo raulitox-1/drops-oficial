@@ -120,9 +120,10 @@ body{font-family:var(--f);background:var(--bg3);color:var(--tx);min-height:100vh
 .dp-back{background:none;border:none;font-size:20px;cursor:pointer;padding:4px;color:var(--tx);}
 .dp-list{padding:0 14px 100px;}
 .dp-card{background:var(--bg);border:1px solid var(--bd);border-radius:var(--rad);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow-sm);}
-.dp-card-imgs{display:flex;gap:4px;height:180px;overflow:hidden;}
-.dp-card-img{flex:1;object-fit:cover;cursor:pointer;}
-.dp-card-img:first-child:last-child{border-radius:0;}
+.dp-card-imgs{display:flex;gap:6px;height:220px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;border-radius:var(--rad) var(--rad) 0 0;scrollbar-width:none;}
+.dp-card-imgs::-webkit-scrollbar{display:none;}
+.dp-card-img{flex-shrink:0;width:calc(100% - 40px);max-width:340px;height:220px;object-fit:cover;cursor:pointer;scroll-snap-align:start;border-radius:var(--rads);}
+.dp-card-img:first-child:last-child{width:100%;max-width:100%;border-radius:var(--rad) var(--rad) 0 0;}
 .dp-card-body{padding:14px;}
 .dp-card-title{font-size:16px;font-weight:800;margin-bottom:4px;}
 .dp-card-seller{font-size:12px;color:var(--tx2);margin-bottom:8px;display:flex;align-items:center;gap:4px;}
@@ -148,8 +149,9 @@ body{font-family:var(--f);background:var(--bg3);color:var(--tx);min-height:100vh
 .dp-calc-row.total{font-weight:800;font-size:15px;border-top:.5px solid var(--g);padding-top:8px;margin-top:4px;}
 /* Panel admin propuestas */
 .prop-card{background:var(--bg);border:1px solid var(--bd);border-radius:var(--rad);padding:14px;margin-bottom:10px;box-shadow:var(--shadow-sm);}
-.prop-imgs{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;}
-.prop-img{width:80px;height:80px;object-fit:cover;border-radius:var(--rads);flex-shrink:0;cursor:pointer;}
+.prop-imgs{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.prop-imgs::-webkit-scrollbar{display:none;}
+.prop-img{width:120px;height:120px;object-fit:cover;border-radius:var(--rads);flex-shrink:0;cursor:pointer;scroll-snap-align:start;}
 .prop-status-badge{display:inline-block;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:700;}
 
 /* ── SUB SELECTOR ─────────────────────────────────────── */
@@ -719,10 +721,15 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 </div>
 
 <!-- MODAL IMAGEN GRANDE -->
-<div class="modal-bg" id="dp-img-modal">
-  <div style="max-width:500px;width:100%;position:relative;">
-    <img id="dp-img-modal-img" style="width:100%;border-radius:var(--rad);max-height:80vh;object-fit:contain;"/>
-    <button onclick="closeModal('dp-img-modal')" style="position:absolute;top:-14px;right:-14px;background:var(--bg);border:.5px solid var(--bd);border-radius:50%;width:32px;height:32px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+<div class="modal-bg" id="dp-img-modal" style="background:rgba(0,0,0,.95);padding:0;" onclick="if(event.target===this)closeModal('dp-img-modal')">
+  <div style="width:100%;max-width:600px;position:relative;display:flex;flex-direction:column;align-items:center;">
+    <img id="dp-img-modal-img" style="width:100%;max-height:88vh;object-fit:contain;display:block;"/>
+    <button onclick="closeModal('dp-img-modal')" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:36px;height:36px;font-size:20px;cursor:pointer;color:#fff;display:flex;align-items:center;justify-content:center;">✕</button>
+    <div id="dp-img-nav" style="display:none;position:absolute;top:50%;transform:translateY(-50%);width:100%;justify-content:space-between;padding:0 8px;pointer-events:none;">
+      <button onclick="dpImgNav(-1)" style="pointer-events:all;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;color:#fff;">‹</button>
+      <button onclick="dpImgNav(1)" style="pointer-events:all;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;color:#fff;">›</button>
+    </div>
+    <div id="dp-img-counter" style="color:rgba(255,255,255,.7);font-size:12px;margin-top:8px;"></div>
   </div>
 </div>
 
@@ -2481,8 +2488,8 @@ function renderDpCard(dp,commId,container){
   const progressId='dp-prog-'+dp.id;
 
   // Fotos
-  const photosHtml=dp.photos.slice(0,4).map(function(url){
-    return '<img class="dp-card-img" src="'+url+'" loading="lazy" onclick="showDpImgModal(\''+url+'\')"/>';
+  const photosHtml=dp.photos.slice(0,6).map(function(url,idx){
+    return '<img class="dp-card-img" src="'+url+'" loading="lazy" onclick="showDpImgModal(\''+url+'\','+JSON.stringify(dp.photos.slice(0,6))+')" />';
   }).join('');
 
   const recaudacion=(dp.precio*dp.total).toFixed(0);
@@ -2538,9 +2545,31 @@ function renderDpCard(dp,commId,container){
   }
 }
 
-window.showDpImgModal=function(url){
-  document.getElementById('dp-img-modal-img').src=url;
+window._dpImgUrls=[];
+window._dpImgIdx=0;
+
+window.showDpImgModal=function(url,photos){
+  if(photos&&photos.length){
+    window._dpImgUrls=photos;
+    window._dpImgIdx=photos.indexOf(url);
+    if(window._dpImgIdx<0)window._dpImgIdx=0;
+  } else {
+    window._dpImgUrls=[url];
+    window._dpImgIdx=0;
+  }
+  document.getElementById('dp-img-modal-img').src=window._dpImgUrls[window._dpImgIdx];
+  // Mostrar/ocultar flechas navegación
+  const nav=document.getElementById('dp-img-nav');
+  if(nav)nav.style.display=window._dpImgUrls.length>1?'flex':'none';
+  const counter=document.getElementById('dp-img-counter');
+  if(counter)counter.textContent=window._dpImgUrls.length>1?(window._dpImgIdx+1)+'/'+window._dpImgUrls.length:'';
   openModal('dp-img-modal');
+};
+
+window.dpImgNav=function(dir){
+  window._dpImgIdx=(window._dpImgIdx+dir+window._dpImgUrls.length)%window._dpImgUrls.length;
+  document.getElementById('dp-img-modal-img').src=window._dpImgUrls[window._dpImgIdx];
+  document.getElementById('dp-img-counter').textContent=(window._dpImgIdx+1)+'/'+window._dpImgUrls.length;
 };
 
 // ── Drop Particular: pantalla de participación completa ─
